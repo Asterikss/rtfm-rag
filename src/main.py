@@ -1,14 +1,20 @@
-from typing import Union
-
 from fastapi import FastAPI
-import uvicorn
 
+from api.v1.endpoints.ingest import router as ingest_router
 from core.config import settings
-from .core.logging_config import setup_logging
+from core.logging_config import setup_logging
 
 setup_logging()
 
-app = FastAPI(title=settings.PROJECT_NAME, version=settings.API_VERSION)
+app = FastAPI(
+  title=settings.PROJECT_NAME,
+  version=settings.API_VERSION,
+  openapi_url=f"{settings.API_V1_STR}/openapi.json",
+)
+
+app.include_router(
+  ingest_router, prefix=settings.API_V1_STR, tags=["Ingest Operations"]
+)
 
 
 @app.get("/", tags=["Root"])
@@ -16,14 +22,11 @@ async def read_root():
   return {"message": f"{settings.PROJECT_NAME} it is."}
 
 
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: Union[str, None] = None):
-  return {"item_id": item_id, "q": q}
-
-
 if __name__ == "__main__":
+  import uvicorn
+
   uvicorn.run(
-    "src.main:app",
+    "main:app",
     host=settings.SERVER_HOST,
     port=settings.SERVER_PORT,
     reload=settings.SERVER_DEBUG_MODE,
