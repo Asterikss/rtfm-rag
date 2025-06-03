@@ -6,7 +6,19 @@
   ...
 }:
 
+let
+  buildInputs = with pkgs; [
+    stdenv.cc.cc
+    libuv
+    zlib
+  ];
+  AtlasVersion = "0.34.0";
+in
 {
+  env = {
+    LD_LIBRARY_PATH = "${with pkgs; lib.makeLibraryPath buildInputs}";
+  };
+
   languages.python = {
     enable = true;
     version = "3.11";
@@ -15,6 +27,24 @@
       sync.enable = true;
     };
   };
+
+  overlays = [
+    (final: prev: {
+      atlas = prev.atlas.overrideAttrs (oldAttrs: rec {
+        version = AtlasVersion;
+
+        src = prev.fetchFromGitHub {
+          owner = "ariga";
+          repo = "atlas";
+          rev = "v${version}";
+          hash = "sha256-7s03YrZw7J2LRCHibMqzBBtVUBSPVEf+TMqtKoWSkkM=";
+        };
+
+        vendorHash = "sha256-K94zOisolCplE/cFrWmv4/MWl5DD27lRekPTl+o4Jwk=";
+      });
+    })
+  ];
+
   packages = [
     pkgs.atlas
   ];
