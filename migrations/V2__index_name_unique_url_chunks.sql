@@ -1,0 +1,3 @@
+ALTER TABLE indexes ADD CONSTRAINT unique_index_name UNIQUE(name);
+
+ALTER TABLE chunks ADD COLUMN url TEXT NOT NULL DEFAULT '';
