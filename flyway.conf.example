@@ -1,0 +1,9 @@
+flyway.url=jdbc:postgresql://localhost:5432/rtfm-rag
+
+flyway.user=developer
+
+flyway.password=password
+
+flyway.locations=filesystem:./migrations
+
+flyway.schemas=public
