@@ -1,7 +1,10 @@
-# Read the Friendly Manual RAG Assistant
+# RTFM (Read The Friendly Manual) RAG Assistant
 
-### Setup locally
-1. Have [nix](https://docs.determinate.systems/) and [devenv](https://devenv.sh/) on your system.
+1. Enter the chosen docs (index name) you want to embed into the assistant knowledge.
+2. Proceed with your questions.
+
+### Setup Locally
+1. Have [nix](https://docs.determinate.systems/) and [devenv](https://devenv.sh/getting-started/) on your system.
 2. Enter shell.
 ```bash
 devenv shell
@@ -12,23 +15,33 @@ devenv shell
 ```bash
 devenv up # devenv up -d to do it in the background
 ```
-  - If running for the first time run:
-  ```bash
-  psql -h localhost -U $USER -d rtfm-rag -f scripts/init_db.sql
-  ```
-  - Then:
-  ```bash
-  flyway migrate
-  ```
+- If running for the first time run:
+    ```bash
+    psql -h localhost -U $USER -d rtfm-rag -f scripts/init_db.sql
+    ```
+- Then:
+    ```bash
+    flyway migrate
+    ```
 4. Launch the api.
   ```bash
   uvicorn src.main:app --port 8032
   ```
-  or
-  ```bash
-  uv run -m src.main
-  ```
-  or
-  ```bash
-  python -m src.main # assuming venv is actiavted
-  ```
+  - or
+    ```bash
+    uv run -m src.main
+    ```
+  - or
+    ```bash
+    python -m src.main # assuming venv is activated
+    ```
+
+### Local Processing
+- Process links and store data locally:
+```python
+uv run -m scripts.scrape_data <url> [--debug] [--max-depth N] [--max-pages N]
+```
+- Ingest locally scraped data:
+```python
+uv run -m scripts.manual_ingest <index_name> [--debug] [--max-chunks N]
+```
