@@ -1,0 +1,408 @@
+from dataclasses import dataclass
+import json
+import logging
+from pathlib import Path
+from typing import List
+
+from openai import OpenAI
+import psycopg
+from pydantic import BaseModel
+from result import Err, Ok, Result
+
+from ..core.config import settings
+
+# TODO: make logging proper
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class StorageStatistics(BaseModel):
+  chunks_inserted: int
+  chunks_failed: int
+  average_chunk_length_chars: float
+  mode_chunk_length_chars: int
+  average_chunk_length_tokens: float
+  mode_chunk_length_tokens: int
+  total_files_processed: int
+  index_name: str
+  source_url: str
+
+
+@dataclass
+class ChunkData:
+  content: str
+  url: str
+  char_length: int
+  token_estimate: int
+
+
+class DatabaseConfig:
+  def __init__(
+    self,
+    host: str = settings.DB_HOST,
+    port: int = settings.DB_PORT,
+    database: str = settings.DB_NAME,
+    user: str = settings.DB_USER,
+    password: str = settings.DB_PASSWORD,
+  ):
+    self.host = host
+    self.port = port
+    self.database = database
+    self.user = user
+    self.password = password
+
+  def get_connection_string(self) -> str:
+    return f"host={self.host} port={self.port} dbname={self.database} user={self.user} password={self.password}"
+
+
+def _get_database_connection(config: DatabaseConfig):
+  try:
+    conn = psycopg.connect(config.get_connection_string())
+    return conn
+  except Exception as e:
+    logger.error(f"Failed to connect to database: {e}")
+    raise
+
+
+def _check_index_exists_in_db(conn, index_name: str) -> Result[bool, str]:
+  try:
+    with conn.cursor() as cursor:
+      cursor.execute("SELECT COUNT(*) FROM indexes WHERE name = %s", (index_name,))
+      count = cursor.fetchone()[0]
+      return Ok(count > 0)
+  except Exception as e:
+    return Err(f"Database error checking index existence: {e}")
+
+
+def _create_index_in_db(conn, index_name: str, source_url: str) -> Result[int, str]:
+  """Create new index in database and return its ID."""
+  try:
+    with conn.cursor() as cursor:
+      cursor.execute(
+        "INSERT INTO indexes (name, source_url) VALUES (%s, %s) RETURNING id",
+        (index_name, source_url),
+      )
+      index_id = cursor.fetchone()[0]
+      conn.commit()
+      return Ok(index_id)
+  except Exception as e:
+    conn.rollback()
+    return Err(f"Failed to create index in database: {e}")
+
+
+def _get_embedding(openai_client: OpenAI, text: str) -> Result[List[float], str]:
+  # TODO: fail if longer than 8192
+  try:
+    response = openai_client.embeddings.create(
+      model="text-embedding-3-small", input=text
+    )
+    return Ok(response.data[0].embedding)
+  except Exception as e:
+    return Err(f"Failed to generate embedding: {e}")
+
+
+def _insert_chunk_to_db(
+  conn, content: str, embedding: List[float], url: str, index_id: int
+) -> Result[None, str]:
+  try:
+    with conn.cursor() as cursor:
+      cursor.execute(
+        "INSERT INTO chunks (content, embedding, url, index_id) VALUES (%s, %s, %s, %s)",
+        (content, embedding, url, index_id),
+      )
+    return Ok(None)
+  except Exception as e:
+    return Err(f"Failed to insert chunk: {e}")
+
+
+def _estimate_tokens(text: str) -> int:
+  return len(text) // 4
+
+
+def _chunk_content(content: str, max_chars: int = 2000) -> List[str]:
+  """Split content into smaller chunks if needed."""
+  # TODO: make this better
+  if len(content) <= max_chars:
+    return [content]
+
+  chunks = []
+  words = content.split()
+  current_chunk = []
+  current_length = 0
+
+  for word in words:
+    word_length = len(word) + 1  # +1 for space
+    if current_length + word_length > max_chars and current_chunk:
+      chunks.append(" ".join(current_chunk))
+      current_chunk = [word]
+      current_length = word_length
+    else:
+      current_chunk.append(word)
+      current_length += word_length
+
+  if current_chunk:
+    chunks.append(" ".join(current_chunk))
+
+  return chunks
+
+
+def _process_json_file(file_path: Path) -> Result[List[ChunkData], str]:
+  """Process a single JSON file and return chunk data."""
+  try:
+    with open(file_path, "r", encoding="utf-8") as f:
+      data = json.load(f)
+
+    chunks = []
+    page_title = data.get("title", "")
+    structured_content = data.get("structured_content", [])
+    url = data.get("url", str(file_path))
+
+    for item in structured_content:
+      # if item.get("type") != "heading":
+      #   continue
+
+      title = item.get("title", "").strip()
+      content = item.get("content", "").strip()
+
+      if not content:
+        continue
+
+      # Base chunk schema
+      base_content = f"{page_title}\n{title}\n{content}"
+
+      # Check if content needs further chunking
+      content_chunks = _chunk_content(base_content)
+
+      if len(content_chunks) == 1:
+        chunk_data = ChunkData(
+          content=base_content,
+          url=url,
+          char_length=len(base_content),
+          token_estimate=_estimate_tokens(base_content),
+        )
+        chunks.append(chunk_data)
+      else:
+        # Multiple chunks needed
+        for i, chunk_content in enumerate(content_chunks, 1):
+          # Replace title with numbered title
+          # TODO: this does not account for page_title and tile being present
+          # only in the first splitted chunk
+          lines = chunk_content.split("\n", 2)
+          if len(lines) >= 2:
+            numbered_title = f"{title} ({i}/{len(content_chunks)})"
+            final_content = (
+              f"{lines[0]}\n{numbered_title}\n{lines[2] if len(lines) > 2 else ''}"
+            )
+          else:
+            final_content = chunk_content
+
+          chunk_data = ChunkData(
+            content=final_content,
+            url=url,
+            char_length=len(final_content),
+            token_estimate=_estimate_tokens(final_content),
+          )
+          chunks.append(chunk_data)
+
+    return Ok(chunks)
+
+  except Exception as e:
+    return Err(f"Failed to process file {file_path}: {e}")
+
+
+def _find_json_files(data_dir: Path) -> List[Path]:
+  """Recursively find all JSON files except settings.json."""
+  json_files = []
+  for file_path in data_dir.rglob("*.json"):
+    if file_path.name != "settings.json":
+      json_files.append(file_path)
+  return json_files
+
+
+def _calculate_mode(values: List[int]) -> int:
+  if not values:
+    return 0
+  return max(set(values), key=values.count)
+
+
+def _write_debug_chunks(chunks: List[ChunkData], index_name: str) -> None:
+  debug_dir = Path("debug_logs")
+  debug_dir.mkdir(exist_ok=True)
+
+  debug_file = debug_dir / f"{index_name}_chunks_debug.txt"
+
+  with open(debug_file, "w", encoding="utf-8") as f:
+    f.write(f"Debug chunks for index: {index_name}\n")
+    f.write("=" * 50 + "\n\n")
+
+    for i, chunk in enumerate(chunks, 1):
+      f.write(f"CHUNK {i}\n")
+      f.write(f"URL: {chunk.url}\n")
+      f.write(f"Length (chars): {chunk.char_length}\n")
+      f.write(f"Length (tokens): {chunk.token_estimate}\n")
+      f.write("-" * 30 + "\n")
+      f.write(f"{chunk.content}\n")
+      f.write("=" * 50 + "\n\n")
+
+  logger.info(f"Debug chunks written to {debug_file}")
+
+
+# def _setup_openai() -> Result[None, str]:
+#   if not settings.OPENAI_API_KEY:
+#     return Err("OpenAI api key is missing.")
+#   openai.api_key = settings.OPENAI_API_KEY
+#   return Ok(None)
+
+
+def store_data(
+  index_name: str,
+  db_config: DatabaseConfig | None = None,
+  debug_mode: bool = False,
+  max_debug_chunks: int = 20,
+) -> Result[StorageStatistics, str]:
+  if db_config is None:
+    db_config = DatabaseConfig()
+
+  # Fail if index_name folder doesn't exist
+  data_dir = Path("data") / index_name
+  if not data_dir.exists():
+    return Err(f"Data directory not found: {data_dir}")
+
+  try:
+    conn = _get_database_connection(db_config)
+  except Exception as e:
+    return Err(f"Database connection failed: {e}")
+
+  try:
+    # Fail if index already exists in database
+    index_exists_result: Result[bool, str] = _check_index_exists_in_db(conn, index_name)
+    if isinstance(index_exists_result, Err):
+      return index_exists_result
+
+    if index_exists_result.ok():
+      return Err(f"Index '{index_name}' already exists in database")
+
+    json_files = _find_json_files(data_dir)
+    if not json_files:
+      return Err(f"No JSON files found in {data_dir}")
+
+    # Process all files and collect chunks
+    all_chunks = []
+    files_processed = 0
+
+    for json_file in json_files:
+      process_result: Result[List[ChunkData], str] = _process_json_file(json_file)
+      if isinstance(process_result, Err):
+        logger.warning(f"Skipping file {json_file}: {process_result.err()}")
+        continue
+
+      all_chunks.extend(process_result.ok())
+      files_processed += 1
+
+      if debug_mode and len(all_chunks) >= max_debug_chunks:
+        break
+
+    if not all_chunks:
+      return Err("No chunks generated from the processed files")
+
+    # Retrieve source_url from summary.json
+    source_url = ""
+    scraper_summary = None
+    summary_file_path = data_dir / "summary.json"
+    if not summary_file_path.exists():
+      logger.info(
+        f"Summary.json file does not exist for index {index_name} ({summary_file_path})"
+      )
+
+    try:
+      with open(summary_file_path) as f:
+        scraper_summary = json.load(f)
+    except Exception as e:
+      logger.error(f"Failed to access summary file {summary_file_path}: {e}")
+
+    source_url: str = scraper_summary.get("base_url", "") if scraper_summary else ""
+
+    char_lengths = [chunk.char_length for chunk in all_chunks]
+    token_lengths = [chunk.token_estimate for chunk in all_chunks]
+
+    average_chunk_length_chars = sum(char_lengths) / len(char_lengths)
+    mode_chunk_length_chars = _calculate_mode(char_lengths)
+    average_chunk_length_tokens = sum(token_lengths) / len(token_lengths)
+    mode_chunk_length_tokens = _calculate_mode(token_lengths)
+
+    if debug_mode:
+      _write_debug_chunks(all_chunks, index_name)
+
+      stats = StorageStatistics(
+        chunks_inserted=0,
+        chunks_failed=0,
+        average_chunk_length_chars=average_chunk_length_chars,
+        mode_chunk_length_chars=mode_chunk_length_chars,
+        average_chunk_length_tokens=average_chunk_length_tokens,
+        mode_chunk_length_tokens=mode_chunk_length_tokens,
+        total_files_processed=files_processed,
+        index_name=index_name,
+        source_url=source_url,
+      )
+      return Ok(stats)
+
+    if not settings.OPENAI_API_KEY:
+      return Err("OpenAI api key is missing.")
+
+    openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+    create_index_result = _create_index_in_db(conn, index_name, source_url)
+    if isinstance(create_index_result, Err):
+      return create_index_result
+
+    index_id: int = create_index_result.ok()
+
+    chunks_inserted = 0
+    chunks_failed = 0
+
+    # Generate embeddings and store chunks
+    for chunk in all_chunks:
+      embedding_result: Result[List[float], str] = _get_embedding(
+        openai_client, chunk.content
+      )
+      if isinstance(embedding_result, Err):
+        logger.warning(
+          f"Skipping chunk due to embedding error: {embedding_result.err()}"
+        )
+        chunks_failed += 1
+        continue
+
+      insert_result = _insert_chunk_to_db(
+        conn, chunk.content, embedding_result.ok(), chunk.url, index_id
+      )
+      if isinstance(insert_result, Err):
+        logger.warning(f"Failed to insert chunk: {insert_result.err()}")
+        chunks_failed += 1
+        continue
+
+      chunks_inserted += 1
+
+    conn.commit()
+
+    if not char_lengths:
+      return Err("No chunks were successfully inserted")
+
+    stats = StorageStatistics(
+      chunks_inserted=chunks_inserted,
+      chunks_failed=chunks_failed,
+      average_chunk_length_chars=average_chunk_length_chars,
+      mode_chunk_length_chars=mode_chunk_length_chars,
+      average_chunk_length_tokens=average_chunk_length_tokens,
+      mode_chunk_length_tokens=mode_chunk_length_tokens,
+      total_files_processed=files_processed,
+      index_name=index_name,
+      source_url=source_url,
+    )
+
+    return Ok(stats)
+
+  except Exception as e:
+    conn.rollback()
+    return Err(f"Unexpected error during data storage: {e}")
+  finally:
+    conn.close()
