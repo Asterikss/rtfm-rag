@@ -10,9 +10,17 @@ class Settings(BaseSettings):
   SERVER_PORT: int = 8032
   SERVER_DEBUG_MODE: bool = False
 
+  DB_HOST: str = "localhost"
+  DB_PORT: int = 5432
+  DB_NAME: str = "rtfm-rag"
+  DB_USER: str = "developer"
+  DB_PASSWORD: str = "password"
+
   LOG_LEVEL: str = "INFO"
   LOG_FILE: str | None = None
   LOG_FORMAT: str = "console"  # "json" or "console"
+
+  OPENAI_API_KEY: str = ""
 
   model_config = SettingsConfigDict(env_file=".env")
 
