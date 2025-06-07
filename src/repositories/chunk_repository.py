@@ -23,10 +23,10 @@ def find_closest_chunks(
     with conn.cursor() as cur:
       cur.execute(
         """
-        SELECT id, embedding <-> %s AS distance, content, url
+        SELECT id, embedding <-> %s::vector AS distance, content, url
         FROM chunks
         WHERE index_id = %s
-        ORDER BY embedding <-> %s
+        ORDER BY embedding <-> %s::vector
         LIMIT %s
         """,
         (new_embedding, index_id, new_embedding, top_k),
