@@ -42,8 +42,8 @@ class ScraperConfig(BaseModel):
   timeout: int = 30
   follow_external_links: bool = False
   enable_structured_extraction: bool = True
-  clean_code_blocks: bool = True
-  remove_line_numbers: bool = True
+  clean_code_blocks: bool = False
+  remove_line_numbers: bool = False
   include_patterns: List[str] = []
   exclude_patterns: List[str] = [
     r".*\.(pdf|jpg|jpeg|png|gif|zip|tar|gz)$",
@@ -180,9 +180,7 @@ class DocumentationScraper:
 
     return sections
 
-  def _extract_structured_content(
-    self, soup: BeautifulSoup, url: str
-  ) -> List[ContentSection]:
+  def _extract_structured_content(self, soup: BeautifulSoup) -> List[ContentSection]:
     sections = []
 
     if not self.config.enable_structured_extraction:
@@ -239,7 +237,7 @@ class DocumentationScraper:
       ]
 
     # Extract content by sections between headings
-    for i, heading in enumerate(headings):
+    for _, heading in enumerate(headings):
       title = heading.get_text().strip()
 
       # Collect content until next heading
@@ -373,7 +371,7 @@ class DocumentationScraper:
     if not main_content:
       main_content = soup.find("body") or soup
 
-    structured_content = self._extract_structured_content(main_content, url)
+    structured_content = self._extract_structured_content(main_content)
 
     # Create raw content for fallback
     raw_content = self.html_converter.handle(str(main_content))
@@ -492,13 +490,18 @@ class DocumentationScraper:
 
         await asyncio.gather(*tasks)
 
-  def _save_to_disk(self, base_url: str, output_dir: Path) -> Dict:
-    parsed_base = urlparse(base_url)
-    clean_base_name = self._clean_url_for_filename(base_url)
-    if not clean_base_name or clean_base_name == "index":
-      clean_base_name = parsed_base.netloc.replace(".", "_")
+  def _save_to_disk(self, index_name: str, base_url: str, output_dir: Path) -> Dict:
+    if index_name:
+      base_dir: Path = output_dir / Path(index_name)
+    else:
+      parsed_base = urlparse(base_url)
+      clean_base_name = self._clean_url_for_filename(base_url)
 
-    base_dir = output_dir / clean_base_name
+      if not clean_base_name or clean_base_name == "index":
+        clean_base_name = parsed_base.netloc.replace(".", "_")
+
+      base_dir = output_dir / clean_base_name
+
     base_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
@@ -548,7 +551,7 @@ class DocumentationScraper:
     return summary
 
   async def scrape_website(
-    self, base_url: str | HttpUrl, output_dir: str = "data"
+    self, base_url: str | HttpUrl, index_name: str, output_dir: str = "data"
   ) -> Result[Dict, str]:
     base_url = str(base_url)
     output_path = Path(output_dir)
@@ -574,7 +577,7 @@ class DocumentationScraper:
         f"Scraped {len(self.scraped_pages)} pages in {end_time - start_time:.2f} seconds"
       )
 
-      summary: Dict = self._save_to_disk(base_url, output_path)
+      summary: Dict = self._save_to_disk(index_name, base_url, output_path)
 
     finally:
       await self.session.close()
