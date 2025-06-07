@@ -1,11 +1,13 @@
-# RTFM (Read The Friendly Manual) RAG Assistant
+# RTFM (Read The Friendly Manual) RAG Assistant (api)
 
 ### Preview
 
-https://github.com/user-attachments/assets/32a712e3-b829-4a56-abb2-f06927a45c05
+https://github.com/user-attachments/assets/e0907418-378f-42df-a252-3580ce08e9bf
 
-1. Enter the chosen documentation (index name) you want to embed into the assistant's knowledge base.
+1. Choose the documentation (index name) you want to embed into the assistant's knowledge base.
 2. Proceed with your questions.
+
+(UI is at - [repo](https://github.com/Asterikss/rtfm-rag-ui))
 
 ### Setup Locally
 1. Make sure you have [nix](https://docs.determinate.systems/) and [devenv](https://devenv.sh/getting-started/) on your system.
@@ -29,8 +31,16 @@ devenv up # devenv up -d to do it in the background
     ```
 4. Launch the api.
   ```bash
-  uvicorn src.main:app --port 8032
+  run
   ```
+  - or
+    ```bash
+    run-prod
+    ```
+  - or
+    ```bash
+    uvicorn src.main:app --port 8032
+    ```
   - or
     ```bash
     uv run -m src.main
