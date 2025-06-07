@@ -45,6 +45,16 @@ in
     })
   ];
 
+  dotenv.disableHint = true;
+
+  scripts.run.exec = ''
+    uvicorn src.main:app --reload --port 8032
+  '';
+
+  scripts.run-prod.exec = ''
+    uvicorn src.main:app --port 8032
+  '';
+
   packages = [
     pkgs.atlas
   ];
