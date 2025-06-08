@@ -9,6 +9,12 @@ https://github.com/user-attachments/assets/e0907418-378f-42df-a252-3580ce08e9bf
 
 (UI is at - [repo](https://github.com/Asterikss/rtfm-rag-ui))
 
+### Embeddings Visualization
+
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/0ce34f6c-eb71-43db-a7a9-047844e930d0" alt="embeddings_visualization" width="560" height="460"/>
+</div>
+
 ### Setup Locally
 1. Make sure you have [nix](https://docs.determinate.systems/) and [devenv](https://devenv.sh/getting-started/) on your system.
 2. Enter shell.
