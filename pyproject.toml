@@ -22,3 +22,6 @@ dev = [
     "plotly>=6.1.2",
     "umap-learn>=0.5.7",
 ]
+
+[tool.ruff]
+indent-width = 2
