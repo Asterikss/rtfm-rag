@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script for storing scraped data in the databse.
-Usage: python manual_ingest.py <index_name> [--debug] [--max-chunks N]
+Script for storing scraped data in the database.
+Usage: python -m scripts.manual_ingest <index_name> [--debug] [--max-chunks N]
 """
 
 import argparse
@@ -30,7 +30,7 @@ def main():
   if result.is_ok():
     stats = result.ok()
     print("Data storage completed successfully")
-    print(f"Statistics:")
+    print("Statistics:")
     print(stats)
   else:
     print(f"Data storage failed: {result.err()}")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script for scraping documentation pages and printing structured extraction results.
-Usage: python -m scripts.scrape_data <url> [--debug] [--max-depth N] [--max-pages N]
+Usage: python -m scripts.scrape_data <url> <index_name> [--debug] [--max-depth N] [--max-pages N]
 """
 
 import argparse
@@ -14,7 +14,9 @@ from result import Err, Result
 from src.services.documentation_scraper import DocumentationScraper, ScraperConfig
 
 
-async def scrape_and_print(url: str, debug: bool, max_depth: int, max_pages: int):
+async def scrape_and_print(
+  url: str, index_name: str, debug: bool, max_depth: int, max_pages: int
+):
   config = ScraperConfig(
     max_depth=max_depth,
     max_pages=max_pages,
@@ -29,7 +31,7 @@ async def scrape_and_print(url: str, debug: bool, max_depth: int, max_pages: int
   if debug:
     print(f"Running in DEBUG mode (max_depth={max_depth}, max_pages={max_pages})")
 
-  scrape_result: Result[Dict, str] = await scraper.scrape_website(url)
+  scrape_result: Result[Dict, str] = await scraper.scrape_website(url, index_name)
   if isinstance(scrape_result, Err):
     print(f"Error occured: {scrape_result.err()}")
     sys.exit(1)
@@ -43,7 +45,7 @@ async def scrape_and_print(url: str, debug: bool, max_depth: int, max_pages: int
       print("No pages were scraped.")
       sys.exit(1)
 
-    print(f"\nStructured extraction results:")
+    print("\nStructured extraction results:")
     for page in pages[:2]:
       print(f"\nPage: {page.title}")
       print(f"Sections: {len(page.structured_content)}")
@@ -56,6 +58,7 @@ async def scrape_and_print(url: str, debug: bool, max_depth: int, max_pages: int
 def main():
   parser = argparse.ArgumentParser(description="Scrape documentation from a url")
   parser.add_argument("url", help="URL of the documentation to scrape")
+  parser.add_argument("index_name", help="Index name for the documentation")
   parser.add_argument(
     "--debug", action="store_true", help="Run in debug mode, print preview"
   )
@@ -67,7 +70,11 @@ def main():
   args = parser.parse_args()
 
   try:
-    asyncio.run(scrape_and_print(args.url, args.debug, args.max_depth, args.max_pages))
+    asyncio.run(
+      scrape_and_print(
+        args.url, args.index_name, args.debug, args.max_depth, args.max_pages
+      )
+    )
   except KeyboardInterrupt:
     print("\nScraping interrupted by user.")
     sys.exit(1)
