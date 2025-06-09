@@ -27,8 +27,8 @@ jobs:
 
       - name: run ruff linter and formatter
         run: |
-          uvx ruff=0.11.10 check
-          uvx ruff=0.11.10 format --check
+          uvx ruff==0.11.10 check
+          uvx ruff==0.11.10 format --check
 
       # - name: set up python
       #   run: uv python install # auto-respects python version
