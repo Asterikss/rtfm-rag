@@ -1,0 +1,49 @@
+name: Python lint and format
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: check out repository
+        uses: actions/checkout@v4
+
+      - name: install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.6.17"
+          enable-cache: true
+          # cache-dependency-glob: "uv.lock"
+
+      - name: run ruff linter and formatter
+        run: |
+          uvx ruff check
+          uvx ruff format --check
+
+      # - name: set up python
+      #   run: uv python install # auto-respects python version
+
+
+      # - name: "set up python"
+      #   uses: actions/setup-python@v5
+      #   with:
+      #     python-version-file: ".python-version"
+      #     # python-version-file: "pyproject.toml"
+      #
+      # - name: install the project
+      #   run: uv sync --locked --all-extras --dev
+      #
+      # - name: run ruff linter and formatter
+      #   run: |
+      #     uv run ruff format --check
+      #     uv run ruff check
