@@ -346,10 +346,10 @@ def store_data(
       )
       return Ok(stats)
 
-    if not settings.OPENAI_API_KEY:
+    if not config.OPENAI_API_KEY:
       return Err("OpenAI api key is missing.")
 
-    openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
 
     create_index_result = _create_index_in_db(conn, index_name, source_url)
     if isinstance(create_index_result, Err):
