@@ -1,19 +1,22 @@
 from dataclasses import dataclass
 import json
-import logging
 from pathlib import Path
-from typing import List
+from typing import List, TYPE_CHECKING
 
-from openai import OpenAI
-import psycopg
 from pydantic import BaseModel
 from result import Err, Ok, Result
 
-from ..core.config import config
+from ..rag.embedder import embed_data
+from ..repositories.chunk_repository import insert_chunk
+from ..repositories.index_repository import check_index_exists, create_index
+from ..services.database_service import get_database_connection
+from ..services.openai_service import get_openai_client
+
+if TYPE_CHECKING:
+  from openai import OpenAI
+
 
 # TODO: make logging proper
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 class StorageStatistics(BaseModel):
@@ -34,85 +37,6 @@ class ChunkData:
   url: str
   char_length: int
   token_estimate: int
-
-
-class DatabaseConfig:
-  def __init__(
-    self,
-    host: str = config.DB_HOST,
-    port: int = config.DB_PORT,
-    database: str = config.DB_NAME,
-    user: str = config.DB_USER,
-    password: str = config.DB_PASSWORD,
-  ):
-    self.host = host
-    self.port = port
-    self.database = database
-    self.user = user
-    self.password = password
-
-  def get_connection_string(self) -> str:
-    return f"host={self.host} port={self.port} dbname={self.database} user={self.user} password={self.password}"
-
-
-def _get_database_connection(config: DatabaseConfig):
-  try:
-    conn = psycopg.connect(config.get_connection_string())
-    return conn
-  except Exception as e:
-    logger.error(f"Failed to connect to database: {e}")
-    raise
-
-
-def _check_index_exists_in_db(conn, index_name: str) -> Result[bool, str]:
-  try:
-    with conn.cursor() as cursor:
-      cursor.execute("SELECT COUNT(*) FROM indexes WHERE name = %s", (index_name,))
-      count = cursor.fetchone()[0]
-      return Ok(count > 0)
-  except Exception as e:
-    return Err(f"Database error checking index existence: {e}")
-
-
-def _create_index_in_db(conn, index_name: str, source_url: str) -> Result[int, str]:
-  """Create new index in database and return its ID."""
-  try:
-    with conn.cursor() as cursor:
-      cursor.execute(
-        "INSERT INTO indexes (name, source_url) VALUES (%s, %s) RETURNING id",
-        (index_name, source_url),
-      )
-      index_id = cursor.fetchone()[0]
-      conn.commit()
-      return Ok(index_id)
-  except Exception as e:
-    conn.rollback()
-    return Err(f"Failed to create index in database: {e}")
-
-
-def _get_embedding(openai_client: OpenAI, text: str) -> Result[List[float], str]:
-  # TODO: fail if longer than 8192
-  try:
-    response = openai_client.embeddings.create(
-      model="text-embedding-3-small", input=text
-    )
-    return Ok(response.data[0].embedding)
-  except Exception as e:
-    return Err(f"Failed to generate embedding: {e}")
-
-
-def _insert_chunk_to_db(
-  conn, content: str, embedding: List[float], url: str, index_id: int
-) -> Result[None, str]:
-  try:
-    with conn.cursor() as cursor:
-      cursor.execute(
-        "INSERT INTO chunks (content, embedding, url, index_id) VALUES (%s, %s, %s, %s)",
-        (content, embedding, url, index_id),
-      )
-    return Ok(None)
-  except Exception as e:
-    return Err(f"Failed to insert chunk: {e}")
 
 
 def _estimate_tokens(text: str) -> int:
@@ -158,6 +82,7 @@ def _process_json_file(file_path: Path) -> Result[List[ChunkData], str]:
     url = data.get("url", str(file_path))
 
     for item in structured_content:
+      # Disable this for now
       # if item.get("type") != "heading":
       #   continue
 
@@ -226,7 +151,7 @@ def _calculate_mode(values: List[int]) -> int:
 
 
 def _write_debug_chunks(chunks: List[ChunkData], index_name: str) -> None:
-  debug_dir = Path("debug_logs")
+  debug_dir = Path("logs")
   debug_dir.mkdir(exist_ok=True)
 
   debug_file = debug_dir / f"{index_name}_chunks_debug.txt"
@@ -244,38 +169,27 @@ def _write_debug_chunks(chunks: List[ChunkData], index_name: str) -> None:
       f.write(f"{chunk.content}\n")
       f.write("=" * 50 + "\n\n")
 
-  logger.info(f"Debug chunks written to {debug_file}")
-
-
-# def _setup_openai() -> Result[None, str]:
-#   if not settings.OPENAI_API_KEY:
-#     return Err("OpenAI api key is missing.")
-#   openai.api_key = settings.OPENAI_API_KEY
-#   return Ok(None)
+  # logger.info(f"Debug chunks written to {debug_file}")
 
 
 def store_data(
   index_name: str,
-  db_config: DatabaseConfig | None = None,
   debug_mode: bool = False,
   max_debug_chunks: int = 20,
 ) -> Result[StorageStatistics, str]:
-  if db_config is None:
-    db_config = DatabaseConfig()
-
   # Fail if index_name folder doesn't exist
   data_dir = Path("data") / index_name
   if not data_dir.exists():
     return Err(f"Data directory not found: {data_dir}")
 
-  try:
-    conn = _get_database_connection(db_config)
-  except Exception as e:
-    return Err(f"Database connection failed: {e}")
+  conn_result: Result = get_database_connection()
+  if isinstance(conn_result, Err):
+    return conn_result
+  conn = conn_result.ok()
 
   try:
     # Fail if index already exists in database
-    index_exists_result: Result[bool, str] = _check_index_exists_in_db(conn, index_name)
+    index_exists_result: Result[bool, str] = check_index_exists(conn, index_name)
     if isinstance(index_exists_result, Err):
       return index_exists_result
 
@@ -287,13 +201,13 @@ def store_data(
       return Err(f"No JSON files found in {data_dir}")
 
     # Process all files and collect chunks
-    all_chunks = []
+    all_chunks: List[ChunkData] = []
     files_processed = 0
 
     for json_file in json_files:
       process_result: Result[List[ChunkData], str] = _process_json_file(json_file)
       if isinstance(process_result, Err):
-        logger.warning(f"Skipping file {json_file}: {process_result.err()}")
+        # logger.warning(f"Skipping file {json_file}: {process_result.err()}")
         continue
 
       all_chunks.extend(process_result.ok())
@@ -310,15 +224,17 @@ def store_data(
     scraper_summary = None
     summary_file_path = data_dir / "summary.json"
     if not summary_file_path.exists():
-      logger.info(
-        f"Summary.json file does not exist for index {index_name} ({summary_file_path})"
-      )
+      ...
+      # logger.info(
+      #   f"Summary.json file does not exist for index {index_name} ({summary_file_path})"
+      # )
 
     try:
       with open(summary_file_path) as f:
         scraper_summary = json.load(f)
     except Exception as e:
-      logger.error(f"Failed to access summary file {summary_file_path}: {e}")
+      ...
+      # logger.error(f"Failed to access summary file {summary_file_path}: {e}")
 
     source_url: str = scraper_summary.get("base_url", "") if scraper_summary else ""
 
@@ -346,12 +262,12 @@ def store_data(
       )
       return Ok(stats)
 
-    if not config.OPENAI_API_KEY:
-      return Err("OpenAI api key is missing.")
+    openai_client_result: Result = get_openai_client()
+    if isinstance(openai_client_result, Err):
+      return openai_client_result
+    openai_client: OpenAI = openai_client_result.ok()
 
-    openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
-
-    create_index_result = _create_index_in_db(conn, index_name, source_url)
+    create_index_result = create_index(conn, index_name, source_url)
     if isinstance(create_index_result, Err):
       return create_index_result
 
@@ -362,21 +278,21 @@ def store_data(
 
     # Generate embeddings and store chunks
     for chunk in all_chunks:
-      embedding_result: Result[List[float], str] = _get_embedding(
+      embedding_result: Result[List[float], str] = embed_data(
         openai_client, chunk.content
       )
       if isinstance(embedding_result, Err):
-        logger.warning(
-          f"Skipping chunk due to embedding error: {embedding_result.err()}"
-        )
+        # logger.warning(
+        #   f"Skipping chunk due to embedding error: {embedding_result.err()}"
+        # )
         chunks_failed += 1
         continue
 
-      insert_result = _insert_chunk_to_db(
+      insert_result = insert_chunk(
         conn, chunk.content, embedding_result.ok(), chunk.url, index_id
       )
       if isinstance(insert_result, Err):
-        logger.warning(f"Failed to insert chunk: {insert_result.err()}")
+        # logger.warning(f"Failed to insert chunk: {insert_result.err()}")
         chunks_failed += 1
         continue
 

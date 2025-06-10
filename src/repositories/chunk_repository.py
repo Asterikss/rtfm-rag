@@ -1,8 +1,10 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, TYPE_CHECKING
 
-import psycopg
 from result import Err, Ok, Result
+
+if TYPE_CHECKING:
+  import psycopg
 
 
 @dataclass
@@ -38,4 +40,38 @@ def find_closest_chunks(
       ]
       return Ok(chunk_retrive_data_list)
   except Exception as e:
-    return Err(f"Failed when trying to find closest chunks {e}")
+    return Err(f"Exception in find_closest_chunks: {e}")
+
+
+def get_chunk_id_by_name(conn: psycopg.Connection, index_name: str) -> Result[int, str]:
+  try:
+    with conn.cursor() as cur:
+      cur.execute(
+        "SELECT id FROM indexes WHERE name = %s",
+        (index_name,),
+      )
+      if not (row := cur.fetchone()):
+        # TODO: ? Optional / maybe
+        return Err("No row fetched in get_chunk_id_by_name")
+      return Ok(row[0])
+  except Exception as e:
+    return Err(f"Exception in get_chunk_id_by_name: {e}")
+
+
+def insert_chunk(
+  conn: psycopg.Connection,
+  content: str,
+  embedding: List[float],
+  url: str,
+  index_id: int,
+) -> Result[None, str]:
+  try:
+    with conn.cursor() as cur:
+      cur.execute(
+        "INSERT INTO chunks (content, embedding, url, index_id) VALUES (%s, %s, %s, %s)",
+        (content, embedding, url, index_id),
+      )
+    return Ok(None)
+  except Exception as e:
+    conn.rollback()
+    return Err(f"Exception in insert_chunk: {e}")

@@ -1,9 +1,11 @@
-from typing import List
+from typing import List, TYPE_CHECKING
 
-from openai import OpenAI
-from result import Result, Ok, Err
+from result import Err, Ok, Result
 
 from ..core.constants import rag
+
+if TYPE_CHECKING:
+  from openai import OpenAI
 
 
 def embed_data(openai_client: OpenAI, text: str) -> Result[List[float], str]:

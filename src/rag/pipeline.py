@@ -4,8 +4,11 @@ from result import Err, Ok, Result, UnwrapError
 
 from ..api.v1.schemas import MessageResponseSchema, MessageSchema
 from ..core.constants import rag
-from ..repositories.chunk_repository import ChunkRetriveData, find_closest_chunks
-from ..repositories.index_repository import get_chunk_id_by_name
+from ..repositories.chunk_repository import (
+  ChunkRetriveData,
+  find_closest_chunks,
+  get_chunk_id_by_name,
+)
 from ..services.database_service import get_database_connection
 from ..services.openai_service import get_openai_client
 from .embedder import embed_data
