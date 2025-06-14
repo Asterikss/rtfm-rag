@@ -4,9 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.v1.endpoints.ingest import router as ingest_router
 from .api.v1.endpoints.query import router as query_router
 from .core.config import config
-from .core.logging_config import setup_logging
-
-setup_logging()
 
 app = FastAPI(
   title=config.PROJECT_NAME,
