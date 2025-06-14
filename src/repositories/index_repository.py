@@ -1,9 +1,26 @@
+from __future__ import annotations
 from typing import List, TYPE_CHECKING, Tuple
 
 from result import Err, Ok, Result
 
 if TYPE_CHECKING:
   import psycopg
+
+
+def get_index_id_by_name(
+  conn: psycopg.Connection, index_name: str
+) -> Result[int | None, str]:
+  try:
+    with conn.cursor() as cur:
+      cur.execute(
+        "SELECT id FROM indexes WHERE name = %s",
+        (index_name,),
+      )
+      if not (row := cur.fetchone()):
+        return Ok(None)
+      return Ok(row[0])
+  except Exception as e:
+    return Err(f"Exception in get_chunk_id_by_name: {e}")
 
 
 def get_indexes_state(conn: psycopg.Connection) -> Result[Tuple[int, List[str]], str]:

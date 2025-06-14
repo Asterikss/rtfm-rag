@@ -4,11 +4,8 @@ from result import Err, Ok, Result, UnwrapError
 
 from ..api.v1.schemas import MessageResponseSchema, MessageSchema
 from ..core.constants import rag
-from ..repositories.chunk_repository import (
-  ChunkRetriveData,
-  find_closest_chunks,
-  get_chunk_id_by_name,
-)
+from ..repositories.chunk_repository import ChunkRetriveData, find_closest_chunks
+from ..repositories.index_repository import get_index_id_by_name
 from ..services.database_service import get_database_connection
 from ..services.openai_service import get_openai_client
 from .embedder import embed_data
@@ -25,14 +22,18 @@ def rag_pipeline(
   try:
     db_conn: psycopg.Connection = get_database_connection().unwrap()
 
-    get_chunk_id: int = get_chunk_id_by_name(db_conn, message_schema.indexName).unwrap()
+    index_id: int | None = get_index_id_by_name(
+      db_conn, message_schema.indexName
+    ).unwrap()
+    if index_id is None:
+      return Err("This index name is not present in the databse")
 
     openai_client: OpenAI = get_openai_client().unwrap()
 
     embedding: List[float] = embed_data(openai_client, message_schema.text).unwrap()
 
     retrived_chunks: List[ChunkRetriveData] = find_closest_chunks(
-      db_conn, embedding, get_chunk_id
+      db_conn, embedding, index_id
     ).unwrap()
 
     filtered_chunks: List[ChunkRetriveData] = [
