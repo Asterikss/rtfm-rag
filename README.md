@@ -59,9 +59,13 @@ devenv up # devenv up -d to do it in the background
 ### Local Processing
 - Process links and store data locally:
 ```python
-uv run -m scripts.scrape_data <url> [--debug] [--max-depth N] [--max-pages N]
+uv run -m scripts.scrape_data <url> <desired_index_name> [--debug] [--max-depth N] [--max-pages N]
 ```
 - Ingest locally scraped data:
 ```python
 uv run -m scripts.manual_ingest <index_name> [--debug] [--max-chunks N]
+```
+- Send scraped data to S3:
+```python
+uv run -m scripts.send_to_s3 <target_dir>
 ```
