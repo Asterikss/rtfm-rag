@@ -26,11 +26,12 @@ def find_closest_chunks(
     with conn.cursor() as cur:
       cur.execute(
         """
-        SELECT id, embedding <-> %s::vector AS distance, content, url
-        FROM chunks
-        WHERE index_id = %s
-        ORDER BY embedding <-> %s::vector
-        LIMIT %s
+        SELECT id, embedding <=> %s::vector AS distance, content, url
+        FROM (
+            SELECT * FROM chunks WHERE index_id = %s
+        ) AS filtered_chunks
+        ORDER BY embedding <=> %s::vector
+        LIMIT %s;
         """,
         (new_embedding, index_id, new_embedding, top_k),
       )
