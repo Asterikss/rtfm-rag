@@ -18,4 +18,4 @@ CREATE TABLE chunks (
 
 CREATE INDEX ON chunks (index_id); -- WHERE
 
-CREATE INDEX ON chunks USING hnsw (embedding vector_l2_ops) WITH (m = 16, ef_construction = 64);  -- ORDER BY <->
+CREATE INDEX ON chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);  -- ORDER BY <=>
