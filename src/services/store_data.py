@@ -11,6 +11,7 @@ from ..repositories.chunk_repository import insert_chunk
 from ..repositories.index_repository import check_index_exists, create_index
 from ..services.database_service import get_database_connection
 from ..services.openai_service import get_openai_client
+from ..utils.utils import get_embed_token_count
 
 if TYPE_CHECKING:
   from openai import OpenAI
@@ -36,11 +37,7 @@ class ChunkData:
   content: str
   url: str
   char_length: int
-  token_estimate: int
-
-
-def _estimate_tokens(text: str) -> int:
-  return len(text) // 4
+  tokens: int
 
 
 def _chunk_content(content: str, max_chars: int = 2000) -> List[str]:
@@ -103,7 +100,7 @@ def _process_json_file(file_path: Path) -> Result[List[ChunkData], str]:
           content=base_content,
           url=url,
           char_length=len(base_content),
-          token_estimate=_estimate_tokens(base_content),
+          tokens=get_embed_token_count(base_content),
         )
         chunks.append(chunk_data)
       else:
@@ -125,7 +122,7 @@ def _process_json_file(file_path: Path) -> Result[List[ChunkData], str]:
             content=final_content,
             url=url,
             char_length=len(final_content),
-            token_estimate=_estimate_tokens(final_content),
+            tokens=get_embed_token_count(final_content),
           )
           chunks.append(chunk_data)
 
@@ -164,7 +161,7 @@ def _write_debug_chunks(chunks: List[ChunkData], index_name: str) -> None:
       f.write(f"CHUNK {i}\n")
       f.write(f"URL: {chunk.url}\n")
       f.write(f"Length (chars): {chunk.char_length}\n")
-      f.write(f"Length (tokens): {chunk.token_estimate}\n")
+      f.write(f"Length (tokens): {chunk.tokens}\n")
       f.write("-" * 30 + "\n")
       f.write(f"{chunk.content}\n")
       f.write("=" * 50 + "\n\n")
@@ -239,7 +236,7 @@ def store_data(
     source_url: str = scraper_summary.get("base_url", "") if scraper_summary else ""
 
     char_lengths = [chunk.char_length for chunk in all_chunks]
-    token_lengths = [chunk.token_estimate for chunk in all_chunks]
+    token_lengths = [chunk.tokens for chunk in all_chunks]
 
     average_chunk_length_chars = sum(char_lengths) / len(char_lengths)
     mode_chunk_length_chars = _calculate_mode(char_lengths)
