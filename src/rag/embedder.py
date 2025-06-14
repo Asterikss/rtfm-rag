@@ -10,7 +10,7 @@ if TYPE_CHECKING:
   from openai import OpenAI
 
 
-def embed_data(openai_client: OpenAI, text: str) -> Result[List[float], str]:
+async def embed_data(openai_client: OpenAI, text: str) -> Result[List[float], str]:
   if (n_tokens := get_embed_token_count(text)) > rag.EMBEDDING_TOKEN_LIMIT:
     return Err(
       f"Input text is too long to embed: {n_tokens} tokens (limit is {rag.EMBEDDING_TOKEN_LIMIT})"

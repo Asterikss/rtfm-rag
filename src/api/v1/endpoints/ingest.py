@@ -41,7 +41,7 @@ async def _ingest_link(
   if isinstance(scrape_result, Err):
     return Err(scrape_result.err())
 
-  data_storage_result = store_data(ingest_link_schema.indexName)
+  data_storage_result = await store_data(ingest_link_schema.indexName)
   if isinstance(data_storage_result, Err):
     return Err(data_storage_result.err())
 

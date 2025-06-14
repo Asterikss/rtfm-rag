@@ -169,7 +169,7 @@ def _write_debug_chunks(chunks: List[ChunkData], index_name: str) -> None:
   # logger.info(f"Debug chunks written to {debug_file}")
 
 
-def store_data(
+async def store_data(
   index_name: str,
   debug_mode: bool = False,
   max_debug_chunks: int = 20,
@@ -273,9 +273,10 @@ def store_data(
     chunks_inserted = 0
     chunks_failed = 0
 
+    # TODO: batching
     # Generate embeddings and store chunks
     for chunk in all_chunks:
-      embedding_result: Result[List[float], str] = embed_data(
+      embedding_result: Result[List[float], str] = await embed_data(
         openai_client, chunk.content
       )
       if isinstance(embedding_result, Err):

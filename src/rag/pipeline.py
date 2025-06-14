@@ -16,7 +16,7 @@ if TYPE_CHECKING:
   import psycopg
 
 
-def rag_pipeline(
+async def rag_pipeline(
   message_schema: MessageSchema,
 ) -> Result[MessageResponseSchema, str]:
   try:
@@ -30,7 +30,9 @@ def rag_pipeline(
 
     openai_client: OpenAI = get_openai_client().unwrap()
 
-    embedding: List[float] = embed_data(openai_client, message_schema.text).unwrap()
+    embedding: List[float] = (
+      await embed_data(openai_client, message_schema.text)
+    ).unwrap()
 
     retrived_chunks: List[ChunkRetriveData] = find_closest_chunks(
       db_conn, embedding, index_id

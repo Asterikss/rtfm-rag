@@ -5,11 +5,13 @@ Usage: python -m scripts.manual_ingest <index_name> [--debug] [--max-chunks N]
 """
 
 import argparse
+import asyncio
 import sys
+
 from src.services.store_data import store_data
 
 
-def main():
+async def main():
   parser = argparse.ArgumentParser(description="Ingest scraped data")
   parser.add_argument("index_name", help="Name of the index to ingest")
   parser.add_argument("--debug", action="store_true", help="Run in debug mode")
@@ -23,7 +25,7 @@ def main():
   if args.debug:
     print(f"Running in DEBUG mode (max {args.max_chunks} chunks)")
 
-  result = store_data(
+  result = await store_data(
     args.index_name, debug_mode=args.debug, max_debug_chunks=args.max_chunks
   )
 
@@ -38,4 +40,4 @@ def main():
 
 
 if __name__ == "__main__":
-  main()
+  asyncio.run(main())
