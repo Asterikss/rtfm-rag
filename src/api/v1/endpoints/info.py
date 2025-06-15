@@ -1,13 +1,17 @@
-from typing import List, Tuple
+from __future__ import annotations
+from typing import List, TYPE_CHECKING, Tuple
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from result import Err, Ok, Result
 
 from ....repositories.index_repository import get_indexes_state
-from ....services.database_service import get_database_connection
+from ....services.database_service import get_db_conn
 
 router = APIRouter(prefix="/info")
+
+if TYPE_CHECKING:
+  from psycopg import AsyncConnection
 
 
 class IndexesInfoResponseSchema(BaseModel):
@@ -15,13 +19,11 @@ class IndexesInfoResponseSchema(BaseModel):
   indexesNames: List[str]
 
 
-def _get_indexes_info() -> Result[IndexesInfoResponseSchema, str]:
-  db_conn_result: Result = get_database_connection()
-  if isinstance(db_conn_result, Err):
-    return Err(db_conn_result.err())
-
-  indexes_info_result: Result[Tuple[int, List[str]], str] = get_indexes_state(
-    db_conn_result.ok()
+async def _get_indexes_info(
+  conn: AsyncConnection,
+) -> Result[IndexesInfoResponseSchema, str]:
+  indexes_info_result: Result[Tuple[int, List[str]], str] = await get_indexes_state(
+    conn
   )
 
   match indexes_info_result:
@@ -36,9 +38,9 @@ def _get_indexes_info() -> Result[IndexesInfoResponseSchema, str]:
 
 
 @router.get("/indexes", response_model=IndexesInfoResponseSchema)
-async def get_indexes_info():
+async def get_indexes_info(conn: AsyncConnection = Depends(get_db_conn)):
   try:
-    match _get_indexes_info():
+    match await _get_indexes_info(conn):
       case Ok(result):
         return result
       case Err(e):

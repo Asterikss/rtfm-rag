@@ -2,9 +2,11 @@ from __future__ import annotations
 from typing import List, TYPE_CHECKING, Tuple
 
 from result import Err, Ok, Result
+import psycopg
+# TODO: remove pyscopg
 
 if TYPE_CHECKING:
-  import psycopg
+  from psycopg import AsyncConnection
 
 
 def get_index_id_by_name(
@@ -23,12 +25,14 @@ def get_index_id_by_name(
     return Err(f"Exception in get_chunk_id_by_name: {e}")
 
 
-def get_indexes_state(conn: psycopg.Connection) -> Result[Tuple[int, List[str]], str]:
+async def get_indexes_state(
+  conn: AsyncConnection,
+) -> Result[Tuple[int, List[str]], str]:
   """Return a tuple: (number of indexes, list of index names)."""
   try:
-    with conn.cursor() as cur:
-      cur.execute("SELECT name FROM indexes")
-      rows = cur.fetchall()
+    async with conn.cursor() as cur:
+      await cur.execute("SELECT name FROM indexes")
+      rows = await cur.fetchall()
       names = [row[0] for row in rows]
       return Ok((len(names), names))
   except Exception as e:
