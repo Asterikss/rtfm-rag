@@ -1,5 +1,4 @@
 from __future__ import annotations
-from dataclasses import dataclass
 from functools import lru_cache
 from typing import AsyncGenerator, TYPE_CHECKING
 
@@ -13,28 +12,21 @@ if TYPE_CHECKING:
   from psycopg import AsyncConnection
 
 
-@dataclass
-class _DatabaseConfig:
-  host: str = config.DB_HOST
-  port: int = config.DB_PORT
-  database: str = config.DB_NAME
-  user: str = config.DB_USER
-  password: str = config.DB_PASSWORD
-
-  def get_connection_string(self) -> str:
-    return (
-      f"host={self.host} port={self.port} dbname={self.database} "
-      f"user={self.user} password={self.password}"
-    )
-
-
-@lru_cache(maxsize=1)
-def get_database_config() -> _DatabaseConfig:
-  return _DatabaseConfig()
-
-
-def get_db_connection_string() -> str:
-  return get_database_config().get_connection_string()
+@lru_cache(maxsize=5)
+def get_db_connection_string(
+  host: str | None = None,
+  port: int | None = None,
+  database: str | None = None,
+  user: str | None = None,
+  password: str | None = None,
+) -> str:
+  return (
+    f"host={host or config.DB_HOST} "
+    f"port={port or config.DB_PORT} "
+    f"dbname={database or config.DB_NAME} "
+    f"user={user or config.DB_USER} "
+    f"password={password or config.DB_PASSWORD}"
+  )
 
 
 async def get_db_conn(request: Request) -> AsyncGenerator[AsyncConnection]:
@@ -50,7 +42,7 @@ async def get_db_conn(request: Request) -> AsyncGenerator[AsyncConnection]:
 
 def get_database_connection() -> Result[psycopg.Connection, str]:
   try:
-    conn = psycopg.connect(get_database_config().get_connection_string())
+    conn = psycopg.connect(get_db_connection_string())
     return Ok(conn)
   except Exception as e:
     return Err(f"Failed to connect to database: {e}")
