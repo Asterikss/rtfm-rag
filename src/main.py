@@ -6,11 +6,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg_pool import AsyncConnectionPool
 
+from .api.v1.endpoints.health import router as health_router
+from .api.v1.endpoints.info import router as info_router
 from .api.v1.endpoints.ingest import router as ingest_router
 from .api.v1.endpoints.query import router as query_router
-from .api.v1.endpoints.info import router as info_router
 from .core.config import config
-from .services.database_service import get_db_connection_string, get_db_conn
+from .services.database_service import get_db_connection_string
 
 
 @asynccontextmanager
@@ -65,6 +66,8 @@ app.include_router(ingest_router, prefix=config.API_V1_STR, tags=["Ingest Operat
 app.include_router(query_router, prefix=config.API_V1_STR, tags=["Query Operations"])
 
 app.include_router(info_router, prefix=config.API_V1_STR, tags=["Info Operations"])
+
+app.include_router(health_router, prefix=config.API_V1_STR, tags=["Health"])
 
 
 @app.get("/", tags=["Root"])
