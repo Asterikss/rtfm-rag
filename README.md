@@ -2,7 +2,7 @@
 
 ### Preview
 
-https://github.com/user-attachments/assets/e0907418-378f-42df-a252-3580ce08e9bf
+https://github.com/user-attachments/assets/35bf32ad-2967-460e-8fca-2bac859cb078
 
 1. Choose the documentation (index name) you want to embed into the assistant's knowledge base.
 2. Proceed with your questions.
