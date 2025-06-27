@@ -1,18 +1,20 @@
 import asyncio
+from datetime import datetime
 import json
+from pathlib import Path
 import re
 import time
-from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Optional, Set
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import aiohttp
-import html2text
 from bs4 import BeautifulSoup, Tag
 from bs4.element import NavigableString
+import html2text
 from pydantic import BaseModel, HttpUrl
-from result import Result, Ok
+from result import Err, Ok, Result
+
+from .s3_uploader import upload_to_s3
 
 
 class ContentSection(BaseModel):
@@ -490,19 +492,8 @@ class DocumentationScraper:
 
         await asyncio.gather(*tasks)
 
-  def _save_to_disk(self, index_name: str, base_url: str, output_dir: Path) -> Dict:
-    if index_name:
-      base_dir: Path = output_dir / Path(index_name)
-    else:
-      parsed_base = urlparse(base_url)
-      clean_base_name = self._clean_url_for_filename(base_url)
-
-      if not clean_base_name or clean_base_name == "index":
-        clean_base_name = parsed_base.netloc.replace(".", "_")
-
-      base_dir = output_dir / clean_base_name
-
-    base_dir.mkdir(parents=True, exist_ok=True)
+  def _save_to_disk(self, output_path: Path, base_url: str) -> Dict:
+    output_path.mkdir(parents=True, exist_ok=True)
 
     summary = {
       "base_url": base_url,
@@ -516,7 +507,7 @@ class DocumentationScraper:
       "config": self.config.model_dump(),
     }
 
-    with open(base_dir / "summary.json", "w", encoding="utf-8") as f:
+    with open(output_path / "summary.json", "w", encoding="utf-8") as f:
       json.dump(summary, f, indent=2, ensure_ascii=False)
 
     # Save pages
@@ -526,10 +517,10 @@ class DocumentationScraper:
       if "/" in relative_path:
         parts = relative_path.split("/")
         file_name = parts[-1] if parts[-1] else "index"
-        dir_path = base_dir / "/".join(parts[:-1]) if len(parts) > 1 else base_dir
+        dir_path = output_path / "/".join(parts[:-1]) if len(parts) > 1 else output_path
       else:
         file_name = relative_path if relative_path else "index"
-        dir_path = base_dir
+        dir_path = output_path
 
       dir_path.mkdir(parents=True, exist_ok=True)
 
@@ -544,14 +535,18 @@ class DocumentationScraper:
       with open(file_path, "w", encoding="utf-8") as f:
         json.dump(page.model_dump(), f, indent=2, ensure_ascii=False)
 
-    print(f"Saved {len(self.scraped_pages)} pages to {base_dir}")
+    print(f"Saved {len(self.scraped_pages)} pages to {output_path}")
     print(f"Total sections: {summary['total_sections']}")
     print(f"Total estimated tokens: {summary['estimated_tokens']}")
 
     return summary
 
   async def scrape_website(
-    self, base_url: str | HttpUrl, index_name: str, output_dir: str = "data"
+    self,
+    base_url: str | HttpUrl,
+    index_name: str,
+    send_to_bucket: bool = False,
+    output_dir: str = "data",
   ) -> Result[Dict, str]:
     base_url = str(base_url)
     output_path = Path(output_dir)
@@ -563,11 +558,15 @@ class DocumentationScraper:
       connector=connector, headers={"User-Agent": "Documentation Scraper"}
     )
 
-    try:
-      parsed = urlparse(base_url)
-      self.base_domain = parsed.netloc
+    if not index_name:
+      return Err("Index name cannot be empty")
 
-      print(f"Scraping {base_url}")
+    try:
+      output_path = Path(index_name) / Path(output_dir)
+
+      self.base_domain = urlparse(base_url).netloc
+
+      print(f"Scraping {base_url}. Base domain: {self.base_domain}")
       start_time = time.time()
 
       await self._scrape_recursively(base_url)
@@ -577,7 +576,11 @@ class DocumentationScraper:
         f"Scraped {len(self.scraped_pages)} pages in {end_time - start_time:.2f} seconds"
       )
 
-      summary: Dict = self._save_to_disk(index_name, base_url, output_path)
+      summary: Dict = self._save_to_disk(output_path, base_url)
+      if send_to_bucket:
+        upload_result: Result[None, str] = await upload_to_s3(output_path)
+        if isinstance(upload_result, Err):
+          print(f"Error: S3 upload failed: {upload_result.err()}")  # TODO:
 
     finally:
       await self.session.close()
