@@ -52,7 +52,7 @@ def create_index(
       row = cur.fetchone()
       if not row:
         conn.rollback()
-        return Err(f"Failed in create_index: No row returned")
+        return Err("Failed in create_index: No row returned")
       return Ok(row[0])
   except Exception as e:
     conn.rollback()
@@ -66,7 +66,7 @@ def check_index_exists(conn: psycopg.Connection, index_name: str) -> Result[bool
       row = cur.fetchone()
       if not row:
         conn.rollback()
-        return Err(f"Failed in check_index_exists: No row returned")
+        return Err("Failed in check_index_exists: No row returned")
       return Ok(row[0] > 0)
   except Exception as e:
     return Err(f"Failed in check_index_exists: {e}")

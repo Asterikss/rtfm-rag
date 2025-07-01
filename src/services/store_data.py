@@ -229,7 +229,7 @@ async def store_data(
     try:
       with open(summary_file_path) as f:
         scraper_summary = json.load(f)
-    except Exception as e:
+    except Exception as _:
       ...
       # logger.error(f"Failed to access summary file {summary_file_path}: {e}")
 
