@@ -6,6 +6,7 @@ from result import Err, Ok, Result
 
 if TYPE_CHECKING:
   import psycopg
+  from psycopg import AsyncConnection
 
 
 @dataclass
@@ -16,15 +17,19 @@ class ChunkRetriveData:
   url: str
 
 
-def find_closest_chunks(
-  conn: psycopg.Connection, new_embedding: List[float], index_id: int, top_k: int = 10
+# conn: psycopg.Connection, new_embedding: List[float], index_id: int, top_k: int = 10, conn =
+async def find_closest_chunks(
+  conn: AsyncConnection,
+  new_embedding: List[float],
+  index_id: int,
+  top_k: int = 10,
 ) -> Result[List[ChunkRetriveData], str]:
   """
   Returns a list of ChunkRetriveData (chunk_id, distance, content) for k closest chunks.
   """
   try:
-    with conn.cursor() as cur:
-      cur.execute(
+    async with conn.cursor() as cur:
+      await cur.execute(
         """
         SELECT id, embedding <=> %s::vector AS distance, content, url
         FROM (
@@ -35,7 +40,7 @@ def find_closest_chunks(
         """,
         (new_embedding, index_id, new_embedding, top_k),
       )
-      rows = cur.fetchall()
+      rows = await cur.fetchall()
       chunk_retrive_data_list: List[ChunkRetriveData] = [
         ChunkRetriveData(id=row[0], distance=row[1], content=row[2], url=row[3])
         for row in rows

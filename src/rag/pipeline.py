@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import List, TYPE_CHECKING
 
 from result import Err, Ok, Result, UnwrapError
@@ -14,12 +15,14 @@ from .generator import generate_response
 if TYPE_CHECKING:
   from openai import OpenAI
   import psycopg
+  from psycopg import AsyncConnection
 
 
 async def rag_pipeline(
-  message_schema: MessageSchema,
+  message_schema: MessageSchema, conn: AsyncConnection
 ) -> Result[MessageResponseSchema, str]:
   try:
+    # TODO: remove
     db_conn: psycopg.Connection = get_database_connection().unwrap()
 
     index_id: int | None = get_index_id_by_name(
@@ -34,8 +37,8 @@ async def rag_pipeline(
       await embed_data(openai_client, message_schema.text)
     ).unwrap()
 
-    retrived_chunks: List[ChunkRetriveData] = find_closest_chunks(
-      db_conn, embedding, index_id
+    retrived_chunks: List[ChunkRetriveData] = (
+      await find_closest_chunks(conn, embedding, index_id)
     ).unwrap()
 
     filtered_chunks: List[ChunkRetriveData] = [
