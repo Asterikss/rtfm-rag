@@ -1,23 +1,20 @@
-from dataclasses import dataclass
+from __future__ import annotations
 import json
 from pathlib import Path
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Tuple
 
 from pydantic import BaseModel
 from result import Err, Ok, Result
 
-from ..rag.embedder import embed_data
-from ..repositories.chunk_repository import insert_chunk
+from ..models.models import ChunkData
+from ..repositories.chunk_repository import insert_chunks
 from ..repositories.index_repository import check_index_exists, create_index
-from ..services.database_service import get_database_connection
 from ..services.openai_service import get_openai_client
 from ..utils.utils import get_embed_token_count
 
 if TYPE_CHECKING:
   from openai import OpenAI
-
-
-# TODO: make logging proper
+  from psycopg import AsyncConnection
 
 
 class StorageStatistics(BaseModel):
@@ -30,14 +27,6 @@ class StorageStatistics(BaseModel):
   total_files_processed: int
   index_name: str
   source_url: str
-
-
-@dataclass
-class ChunkData:
-  content: str
-  url: str
-  char_length: int
-  tokens: int
 
 
 def _chunk_content(content: str, max_chars: int = 2000) -> List[str]:
@@ -166,10 +155,9 @@ def _write_debug_chunks(chunks: List[ChunkData], index_name: str) -> None:
       f.write(f"{chunk.content}\n")
       f.write("=" * 50 + "\n\n")
 
-  # logger.info(f"Debug chunks written to {debug_file}")
-
 
 async def store_data(
+  conn: AsyncConnection,
   index_name: str,
   debug_mode: bool = False,
   max_debug_chunks: int = 20,
@@ -179,14 +167,9 @@ async def store_data(
   if not data_dir.exists():
     return Err(f"Data directory not found: {data_dir}")
 
-  conn_result: Result = get_database_connection()
-  if isinstance(conn_result, Err):
-    return conn_result
-  conn = conn_result.ok()
-
   try:
     # Fail if index already exists in database
-    index_exists_result: Result[bool, str] = check_index_exists(conn, index_name)
+    index_exists_result: Result[bool, str] = await check_index_exists(conn, index_name)
     if isinstance(index_exists_result, Err):
       return index_exists_result
 
@@ -222,6 +205,7 @@ async def store_data(
     summary_file_path = data_dir / "summary.json"
     if not summary_file_path.exists():
       ...
+      # TODO: todo
       # logger.info(
       #   f"Summary.json file does not exist for index {index_name} ({summary_file_path})"
       # )
@@ -231,6 +215,7 @@ async def store_data(
         scraper_summary = json.load(f)
     except Exception as _:
       ...
+      # TODO: todo
       # logger.error(f"Failed to access summary file {summary_file_path}: {e}")
 
     source_url: str = scraper_summary.get("base_url", "") if scraper_summary else ""
@@ -264,41 +249,23 @@ async def store_data(
       return openai_client_result
     openai_client: OpenAI = openai_client_result.ok()
 
-    create_index_result = create_index(conn, index_name, source_url)
+    create_index_result: Result[int, str] = await create_index(
+      conn, index_name, source_url
+    )
     if isinstance(create_index_result, Err):
       return create_index_result
 
     index_id: int = create_index_result.ok()
 
-    chunks_inserted = 0
-    chunks_failed = 0
+    insert_chunks_res: Result[Tuple[int, int], str] = await insert_chunks(
+      conn, all_chunks, openai_client, index_id
+    )
+    if isinstance(insert_chunks_res, Err):
+      return insert_chunks_res
 
-    # TODO: batching
-    # Generate embeddings and store chunks
-    for chunk in all_chunks:
-      embedding_result: Result[List[float], str] = await embed_data(
-        openai_client, chunk.content
-      )
-      if isinstance(embedding_result, Err):
-        # logger.warning(
-        #   f"Skipping chunk due to embedding error: {embedding_result.err()}"
-        # )
-        chunks_failed += 1
-        continue
+    chunks_inserted, chunks_failed = insert_chunks_res.ok()
 
-      insert_result = insert_chunk(
-        conn, chunk.content, embedding_result.ok(), chunk.url, index_id
-      )
-      if isinstance(insert_result, Err):
-        # logger.warning(f"Failed to insert chunk: {insert_result.err()}")
-        chunks_failed += 1
-        continue
-
-      chunks_inserted += 1
-
-    conn.commit()
-
-    if not char_lengths:
+    if not chunks_inserted:
       return Err("No chunks were successfully inserted")
 
     stats = StorageStatistics(
@@ -316,7 +283,4 @@ async def store_data(
     return Ok(stats)
 
   except Exception as e:
-    conn.rollback()
     return Err(f"Unexpected error during data storage: {e}")
-  finally:
-    conn.close()
