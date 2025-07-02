@@ -7,14 +7,12 @@ from ..api.v1.schemas import MessageResponseSchema, MessageSchema
 from ..core.constants import rag
 from ..repositories.chunk_repository import ChunkRetriveData, find_closest_chunks
 from ..repositories.index_repository import get_index_id_by_name
-from ..services.database_service import get_database_connection
 from ..services.openai_service import get_openai_client
 from .embedder import embed_data
 from .generator import generate_response
 
 if TYPE_CHECKING:
   from openai import OpenAI
-  import psycopg
   from psycopg import AsyncConnection
 
 
@@ -22,11 +20,8 @@ async def rag_pipeline(
   message_schema: MessageSchema, conn: AsyncConnection
 ) -> Result[MessageResponseSchema, str]:
   try:
-    # TODO: remove
-    db_conn: psycopg.Connection = get_database_connection().unwrap()
-
-    index_id: int | None = get_index_id_by_name(
-      db_conn, message_schema.indexName
+    index_id: int | None = (
+      await get_index_id_by_name(conn, message_schema.indexName)
     ).unwrap()
     if index_id is None:
       return Err("This index name is not present in the databse")

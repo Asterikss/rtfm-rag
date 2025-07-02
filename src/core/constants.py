@@ -42,7 +42,7 @@ but avoid unnecessary jargon.
 heading, keep it lean. Importantly, use new lines to clearly break up content
 where needed. Any code blocks should be clearly separated and markdown syntax
 for code blocks should be used.
-  """,
+""",
   GENERATOR_USER_PROMPT_TEMPLATE=r"""
 <CONTEXT>
 {context}
@@ -51,5 +51,5 @@ for code blocks should be used.
 <USER_QUERY>
 {user_query}
 <\USER_QUERY>
-  """,
+""",
 )

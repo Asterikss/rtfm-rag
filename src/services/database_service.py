@@ -29,6 +29,8 @@ def get_db_connection_string(
   )
 
 
+# Request is used (ment to be used with Depends()) so that
+# "from ..main import app" import is not needed
 async def get_db_conn(request: Request) -> AsyncGenerator[AsyncConnection]:
   try:
     async with request.app.state.db_pool.connection() as conn:
