@@ -2,23 +2,21 @@ from __future__ import annotations
 from typing import List, TYPE_CHECKING, Tuple
 
 from result import Err, Ok, Result
-import psycopg
-# TODO: remove pyscopg
 
 if TYPE_CHECKING:
   from psycopg import AsyncConnection
 
 
-def get_index_id_by_name(
-  conn: psycopg.Connection, index_name: str
+async def get_index_id_by_name(
+  conn: AsyncConnection, index_name: str
 ) -> Result[int | None, str]:
   try:
-    with conn.cursor() as cur:
-      cur.execute(
+    async with conn.cursor() as cur:
+      await cur.execute(
         "SELECT id FROM indexes WHERE name = %s",
         (index_name,),
       )
-      if not (row := cur.fetchone()):
+      if not (row := await cur.fetchone()):
         return Ok(None)
       return Ok(row[0])
   except Exception as e:
@@ -39,33 +37,36 @@ async def get_indexes_state(
     return Err(f"Exception in get_indexes_info: {e}")
 
 
-def create_index(
-  conn: psycopg.Connection, index_name: str, source_url: str
+async def create_index(
+  conn: AsyncConnection, index_name: str, source_url: str
 ) -> Result[int, str]:
   """Create new index in database and return its ID."""
   try:
-    with conn.cursor() as cur:
-      cur.execute(
+    async with conn.cursor() as cur:
+      await cur.execute(
         "INSERT INTO indexes (name, source_url) VALUES (%s, %s) RETURNING id",
         (index_name, source_url),
       )
-      row = cur.fetchone()
+      row = await cur.fetchone()
       if not row:
-        conn.rollback()
+        await conn.rollback()
         return Err("Failed in create_index: No row returned")
+      await conn.commit()
       return Ok(row[0])
   except Exception as e:
-    conn.rollback()
+    await conn.rollback()
     return Err(f"Failed in create_index: {e}")
 
 
-def check_index_exists(conn: psycopg.Connection, index_name: str) -> Result[bool, str]:
+# Could just use get_index_id_by_name instead
+async def check_index_exists(
+  conn: AsyncConnection, index_name: str
+) -> Result[bool, str]:
   try:
-    with conn.cursor() as cur:
-      cur.execute("SELECT COUNT(*) FROM indexes WHERE name = %s", (index_name,))
-      row = cur.fetchone()
+    async with conn.cursor() as cur:
+      await cur.execute("SELECT COUNT(*) FROM indexes WHERE name = %s", (index_name,))
+      row = await cur.fetchone()
       if not row:
-        conn.rollback()
         return Err("Failed in check_index_exists: No row returned")
       return Ok(row[0] > 0)
   except Exception as e:
