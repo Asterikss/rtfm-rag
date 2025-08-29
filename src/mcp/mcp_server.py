@@ -13,7 +13,7 @@ from mcp.server.session import ServerSession
 from psycopg import AsyncConnection
 from result import Err, Ok, Result
 
-from src.mcp.mcp_tools import get_docs_context_impl
+from src.mcp.mcp_tools import fetch_docs_candidate_context_impl
 from src.services.database_service import get_db_connection_string
 
 
@@ -35,11 +35,11 @@ mcp = FastMCP(name="rtfm-rag-mcp", lifespan=lifespan, host="0.0.0.0", port=8033)
 
 
 @mcp.tool()
-async def get_docs_context(
+async def fetch_docs_candidate_context(
   query: str, index_name: str, ctx: Context[ServerSession, AppContext]
 ) -> str:
   """Retrieve context from the specified docs index based on query similarity."""
-  context_result: Result[str, str] = await get_docs_context_impl(
+  context_result: Result[str, str] = await fetch_docs_candidate_context_impl(
     query, index_name, ctx.request_context.lifespan_context.db_conn
   )
   match context_result:

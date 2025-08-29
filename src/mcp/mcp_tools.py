@@ -14,7 +14,7 @@ if TYPE_CHECKING:
   from psycopg import AsyncConnection
 
 
-async def get_docs_context_impl(
+async def fetch_docs_candidate_context_impl(
   query: str, index_name: str, conn: AsyncConnection
 ) -> Result[str, str]:
   try:
@@ -35,7 +35,9 @@ async def get_docs_context_impl(
       for chunk_data in retrived_chunks
       if chunk_data.distance < rag.MAX_RELEVANT_DISTANCE
     ]
-
-    return Ok("\n\n".join(filtered_chunk.content for filtered_chunk in filtered_chunks))
+    context = "\n\n".join(filtered_chunk.content for filtered_chunk in filtered_chunks)
+    return Ok(
+      "<Candidate Additional Context>\n" + context + "\n</Candidate Additional Context>"
+    )
   except UnwrapError as e:
     return Err(str(e))
