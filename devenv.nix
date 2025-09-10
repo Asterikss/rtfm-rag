@@ -57,6 +57,8 @@ in
 
   packages = [
     pkgs.atlas
+    pkgs.flyway
+    pkgs.podman
   ];
   services.postgres = {
     enable = true;
@@ -67,4 +69,16 @@ in
       extensions.pgvector
     ];
   };
+  enterShell = ''
+    # Ensure XDG_RUNTIME_DIR is set (it usually is in a normal user session)
+    if [ -z "$XDG_RUNTIME_DIR" ]; then
+      export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+      # Ensure the directory exists, podman service usually creates it
+      mkdir -p "$XDG_RUNTIME_DIR/podman"
+    fi
+
+    # Set DOCKER_HOST to point to the user's podman socket
+    export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
+    echo "DOCKER_HOST set to: $DOCKER_HOST"
+  '';
 }
