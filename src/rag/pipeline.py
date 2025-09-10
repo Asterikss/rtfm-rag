@@ -17,20 +17,18 @@ if TYPE_CHECKING:
 
 
 async def rag_pipeline(
-  message_schema: MessageSchema, conn: AsyncConnection
+  message: MessageSchema, conn: AsyncConnection
 ) -> Result[MessageResponseSchema, str]:
   try:
     index_id: int | None = (
-      await get_index_id_by_name(conn, message_schema.indexName)
+      await get_index_id_by_name(conn, message.indexName)
     ).unwrap()
     if index_id is None:
-      return Err("This index name is not present in the databse")
+      return Err("This index name is not present in the database")
 
     openai_client: OpenAI = get_openai_client().unwrap()
 
-    embedding: List[float] = (
-      await embed_data(openai_client, message_schema.text)
-    ).unwrap()
+    embedding: List[float] = (await embed_data(openai_client, message.text)).unwrap()
 
     retrived_chunks: List[ChunkRetriveData] = (
       await find_closest_chunks(conn, embedding, index_id)
@@ -42,7 +40,7 @@ async def rag_pipeline(
       if chunk_data.distance < rag.MAX_RELEVANT_DISTANCE
     ]
 
-    response: str = generate_response(message_schema.text, filtered_chunks).unwrap()
+    response: str = generate_response(message.text, filtered_chunks).unwrap()
 
     links: List[str] = list(set(chunk_data.url for chunk_data in filtered_chunks))
 
