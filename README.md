@@ -56,6 +56,19 @@ devenv up # devenv up -d to do it in the background
     python -m src.main # assuming venv is activated
     ```
 
+### MCP
+To start the MCP server:
+1. Ensure the database is up (`devenv up`)
+2. run:
+  ```bash
+  uv run -m src.mcp.mcp_server
+
+  ```
+To test the server run (standalone script):
+```bash
+uv run -m scripts.test_mcp_server
+  ```
+
 ### Local Processing
 - Process links and store data locally:
 ```python
