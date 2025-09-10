@@ -7,6 +7,7 @@ Run with: python -m src.mcp.mcp_server
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Optional
 
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
@@ -24,11 +25,20 @@ class AppContext:
 
 @asynccontextmanager
 async def lifespan(_: FastMCP) -> AsyncIterator[AppContext]:
-  conn = await AsyncConnection.connect(get_db_connection_string())
+  conn: Optional[AsyncConnection] = None
+
   try:
+    print("Trying to connect to the database")
+    conn = await AsyncConnection.connect(get_db_connection_string())
+    print("Database connection established")
     yield AppContext(db_conn=conn)
+  except Exception as e:
+    raise RuntimeError(f"Failed to establish database connection: \n{e}")
   finally:
-    await conn.close()
+    if conn:
+      print("Closing database connection...")
+      await conn.close()
+      print("Database connection closed")
 
 
 mcp = FastMCP(name="rtfm-rag-mcp", lifespan=lifespan, host="0.0.0.0", port=8033)
@@ -50,5 +60,5 @@ async def fetch_docs_candidate_context(
 
 
 if __name__ == "__main__":
-  print("Starting the rtfm-rag-mcp server")
+  print("Started the rtfm-rag-mcp server with fetch_docs_candidate_context tool")
   mcp.run(transport="stdio")
